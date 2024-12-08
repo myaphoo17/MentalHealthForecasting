@@ -3,18 +3,21 @@ library(ggplot2)
 library(dplyr)
 library(readr)
 library(rlang)
+library(countrycode)
 
+mental_health_data <- read_csv('E:/R_FINAL_ANALYSIS/mental_health_data.csv')
 
-mental_health_data <- read_csv('E:/rer_textbook/mental_health_data.csv')
-
-
+# Clean column names to avoid issues with special characters
 names(mental_health_data) <- tolower(gsub("[^[:alnum:]_]", "_", names(mental_health_data)))
 mental_health_data <- mental_health_data %>% mutate(year = as.numeric(year))
 
+# Ensure 'entity' contains valid country names
+mental_health_data$entity <- as.factor(mental_health_data$entity)
 
 ui <- fluidPage(
-  titlePanel("Global Mental Health Disorders Analysis"),
-  
+  div(
+    HTML("<h4 style='text-align: center;'>Global Mental Health Disorders Analysis</h4>")
+  ),
   sidebarLayout(
     sidebarPanel(
       selectInput("country", "Select Country:", choices = unique(mental_health_data$entity)),
@@ -30,12 +33,54 @@ ui <- fluidPage(
     
     mainPanel(
       tabsetPanel(
-        tabPanel("Trend", plotOutput("trendPlot")),
-        tabPanel("Scatter", plotOutput("scatterPlot")),
-        tabPanel("Histogram", plotOutput("histPlot")),
-        tabPanel("Bar Plot", plotOutput("barPlot")),
-        tabPanel("Prediction", verbatimTextOutput("prediction")),
-        tabPanel("Summary", verbatimTextOutput("summaryStats"))
+        tabPanel(
+          title = div(icon("chart-line"), "Trend Analysis"),
+          tags$div(
+            "Visualize trends over time for the selected mental health disorder.",
+            style = "font-size: 0.9rem; color: gray; margin-bottom: 10px;"
+          ),
+          plotOutput("trendPlot")
+        ),
+        tabPanel(
+          title = div(icon("braille"), "Scatter Plot"),
+          tags$div(
+            "Explore the relationship between years and disorder prevalence using scatter plots.",
+            style = "font-size: 0.9rem; color: gray; margin-bottom: 10px;"
+          ),
+          plotOutput("scatterPlot")
+        ),
+        tabPanel(
+          title = div(icon("chart-bar"), "Histogram"),
+          tags$div(
+            "Understand the distribution of disorder prevalence for the selected country.",
+            style = "font-size: 0.9rem; color: gray; margin-bottom: 10px;"
+          ),
+          plotOutput("histPlot")
+        ),
+        tabPanel(
+          title = div(icon("chart-pie"), "Bar Plot"),
+          tags$div(
+            "Compare average disorder prevalence across continents.",
+            style = "font-size: 0.9rem; color: gray; margin-bottom: 10px;"
+          ),
+          plotOutput("barPlot")
+        ),
+        tabPanel(
+          title = div(icon("chart-line"), "Predictions"),
+          tags$div(
+            "Forecast future trends based on historical data.",
+            style = "font-size: 0.9rem; color: gray; margin-bottom: 10px;"
+          ),
+          verbatimTextOutput("prediction")
+        ),
+        tabPanel(
+          title = div(icon("table"), "Summary Statistics"),
+          tags$div(
+            "Get descriptive statistics for the selected mental health disorder.",
+            style = "font-size: 0.9rem; color: gray; margin-bottom: 10px;"
+          ),
+          verbatimTextOutput("summaryStats")
+        )
       )
     )
   )
@@ -97,16 +142,22 @@ server <- function(input, output) {
   
   # Render bar plot
   output$barPlot <- renderPlot({
+    # Add continent information to the dataset if not already present
+    mental_health_data <- mental_health_data %>%
+      mutate(continent = countrycode(entity, "country.name", "continent"))
+    
+    # Calculate average disorder value by continent
     avg_disorder_value <- mental_health_data %>%
-      group_by(entity) %>%
+      group_by(continent) %>%
       summarise(avg_value = mean(.data[[input$disorder]], na.rm = TRUE)) %>%
       arrange(desc(avg_value))
     
-    ggplot(avg_disorder_value, aes(x = reorder(entity, avg_value), y = avg_value)) +
+    # Plot the averages by continent
+    ggplot(avg_disorder_value, aes(x = reorder(continent, avg_value), y = avg_value)) +
       geom_bar(stat = "identity", fill = "steelblue") +
       coord_flip() +
-      labs(title = paste("Average", input$disorder, "Across Countries"),
-           x = "Country", y = "Average Share of Population (%)") +
+      labs(title = paste("Average", input$disorder, "Across Continents"),
+           x = "Continent", y = "Average Share of Population (%)") +
       theme_minimal() +
       theme(axis.text.y = element_text(size = 10), plot.title = element_text(hjust = 0.5))
   })
@@ -114,14 +165,27 @@ server <- function(input, output) {
   # Render summary statistics
   output$summaryStats <- renderPrint({
     data <- filtered_data()
-    disorder_col <- input$disorder  # Clean up the column name directly
+    disorder_col <- input$disorder
     
     validate(need(nrow(data) > 0, "No data available for the selected country."))
     
-    summary(data[[disorder_col]])
+    selected_data <- data[[disorder_col]]
+    
+    # Create a list of detailed statistics
+    stats <- list(
+      Summary = summary(selected_data),
+      Mean = mean(selected_data, na.rm = TRUE),
+      Median = median(selected_data, na.rm = TRUE),
+      Standard_Deviation = sd(selected_data, na.rm = TRUE),
+      Variance = var(selected_data, na.rm = TRUE),
+      Range = range(selected_data, na.rm = TRUE)
+    )
+    
+    # Print the statistics
+    stats
   })
   
-  # Predict future values (5 years ahead)
+  # Predict future values
   output$prediction <- renderPrint({
     input$predictBtn
     
